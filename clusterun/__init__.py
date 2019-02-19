@@ -1,1 +1,1 @@
-from clusterun import PBSJob, run_cli
+from .clusterun import PBSJob, run_cli
