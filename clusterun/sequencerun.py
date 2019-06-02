@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from importlib.util import spec_from_file_location, module_from_spec
 from pathlib import Path
 
-from clusterun import cli
+from .clusterun import clusterun
 
 
 def load_name(path, name):
@@ -75,7 +75,7 @@ def sequencerun(callback, space, job_name=None, directory=None, executable=None)
         f'cd {directory}',
         f'{executable} {filepath} {code_path} {callback_name} {space_name} --index "$sequencerun_index"',
     ])
-    cli(command, variables, job_name=job_name)
+    clusterun(command, variables, job_name=job_name)
 
 
 def main():

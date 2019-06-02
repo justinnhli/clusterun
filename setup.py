@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='clusterun',
-    version='0.0.2b1',
+    version='0.0.2b2',
     description='A script to run jobs on a Torque server',
     url='https://github.com/justinnhli/clusterun',
     author='Justin Li',
