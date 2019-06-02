@@ -1,1 +1,2 @@
-from .clusterun import PBSJob, run_cli
+from .clusterun import clusterun
+from .sequencerun import sequencerun

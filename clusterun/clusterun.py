@@ -1,198 +1,269 @@
-#!/usr/bin/env python3
-
 import re
-import sys
 import subprocess
+import sys
+from shlex import quote
 from ast import literal_eval
+from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
-from itertools import product
+from inspect import currentframe
+from itertools import islice, product
+from pathlib import Path
 from textwrap import dedent
 
-NUM_CORES = 1
 
-class PBSJob:
+def get_parameters(space, num_cores=1, core=0, skip=0):
+    """Split a parameter space into a size appropriate for one core.
 
-    # For more details, See the \`qsub\` manpage, or
-    # http://docs.adaptivecomputing.com/torque/4-1-3/Content/topics/commands/qsub.htm
-    TEMPLATE = dedent('''
-        #!/bin/sh
+    Arguments:
+        space (Iterable): The space of parameters.
+        num_cores (int): The number of cores to split jobs for.
+        core (int): The core whose job to start.
+        skip (int): The number of initial parameters to skip.
 
-        #PBS -N pbs_{name}
-        #PBS -q {queue}
-        #PBS -l {resources}
-        #PBS -v {variables}
-        #PBS -r n
+    Returns:
+        Sequence[Namespace]: The relevant section of the parameter space.
+    """
+    return list(islice(space, core, None, num_cores))[skip:]
 
-        {commands}
-    ''').strip()
 
-    def __init__(self, name, commands, queue=None, venv=None):
-        self.name = name
-        self.commands = commands
-        if queue is None:
-            self.queue = 'justinli'
-        else:
-            self.queue = queue
-        self.venv = venv
-        # these are default for now; future changes may allow on-the-fly allocation
-        self.resources = 'nodes=n006.cluster.com:ppn=1,mem=1000mb,file=4gb'
+def create_command(args, indices):
+    command = []
+    command.append(sys.executable)
+    command.append(str(Path(__file__).resolve()))
+    command.append(f'--command {quote(args.command)}')
+    for var, vals in args.variables:
+        variable_argument = f'{var}={repr(vals)}'
+        command.append(f'--variable {quote(variable_argument)}')
+    command.append('--index ' + ','.join(str(i) for i in indices))
+    command.append('--dispatch False')
+    return ' '.join(command)
 
-    def _generate_commands(self):
-        commands = self.commands
-        if self.venv is not None:
-            prefixes = [
-                'source "/home/justinnhli/.venv/{}/bin/activate"'.format(self.venv),
-            ]
-            suffixes = [
-                'deactivate',
-            ]
-            commands = prefixes + commands + suffixes
-        return '\n'.join(commands)
 
-    def generate_script(self, variables=None):
-        """Create a PBS job script.
+def dry_run(args):
+    print('Command:')
+    print(f'    {args.command}')
+    print()
+    print(f'{len(args.variables)} variable(s):')
+    for var, vals in args.variables:
+        print(f'    {var} ({len(vals)}): {", ".join(repr(v) for v in vals)}')
+    print()
+    if args.dispatch:
+        print(' '.join([
+            f'dispatching {sum(len(indices) for indices in args.indices)}',
+            f'out of {args.size} permutations,',
+            f'to {len(args.indices)} parallel job(s):',
+        ]))
+        for job_num, indices in enumerate(args.indices, start=1):
+            print(f'    job {job_num} ({len(indices)}): ' + ', '.join(str(i) for i in indices))
+    else:
+        print(' '.join([
+            f'running {sum(len(indices) for indices in args.indices)}',
+            f'out of {args.size} permutations',
+        ]))
 
-        Arguments:
-            variables (List[Tuple[str, obj]]): List of (key, value).
 
-        Returns:
-            str: The PBS job script.
-        """
-        if variables is None:
-            variables = []
-        return PBSJob.TEMPLATE.format(
-            name=self.name,
-            queue=self.queue,
-            resources=self.resources,
-            variables=','.join(f'{key}={value}' for key, value in variables),
-            commands=self._generate_commands(),
-        )
+def dispatch(args):
+    for job_num, indices in enumerate(args.indices, start=1):
+        command = create_command(args, indices)
+        script = dedent(f'''
+            #!/bin/sh
 
-    def run(self, variables):
-        """Create a single job.
+            #PBS -N {args.job_name}-{job_num}
+            #PBS -q {args.queue}
+            #PBS -l nodes=n006.cluster.com:ppn=1,mem=1000mb,file=4gb
+            #PBS -r n
 
-        Arguments:
-            variables (List[Tuple[str, obj]]): List of (key, value).
-        """
-        qsub_command = ['qsub', '-']
+            {command}
+        ''').strip()
         subprocess.run(
-            qsub_command,
-            input=self.generate_script(variables).encode('utf-8'),
+            ['qsub', '-'],
+            input=script.encode('utf-8'),
             shell=True,
         )
 
-    def run_all(self, variable_space=None):
-        """Create jobs for all variables.
 
-        Arguments:
-            variable_space (List[Tuple[str, List[obj]]]): List of (key, values).
-        """
-        if variable_space is None:
-            variable_space = []
-        keys = [key for key, values in variable_space]
-        space = [values for key, values in variable_space]
-        for values in product(*space):
-            self.run(list(zip(keys, values)))
+def run_single(args):
+    index = set(args.index)
+    variables = [var for var, _ in args.variables]
+    for i, values in enumerate(product(*(vals for _, vals in args.variables))):
+        if i not in index:
+            continue
+        script = []
+        for var, val in zip(variables, values):
+            script.append(f'{var}={val}')
+        script.append(args.command)
+        script = '\n'.join(script)
+        subprocess.run(script, shell=True)
 
 
-def run_cli(job_name, variables, commands, queue=None, venv=None, verbose=True):
-    """Preview the job script and prompt for job start.
+def valid_variable(var):
+    return re.fullmatch('[a-z_][a-z0-9_]*', var)
 
-    Arguments:
-        job_name (str): The name of the job.
-        variables (List[Tuple[str, List[obj]]]): List of (key, values).
-        commands (List[str]): Commands to run.
-        queue (str): The queue to submit the jobs to.
-        venv (str): The virtual environment to use.
-    """
-    pbs_job = PBSJob(job_name, commands, queue=queue, venv=venv)
-    if verbose:
-        print(pbs_job.generate_script())
-        print()
-        print(40 * '-')
-        print()
-        # print variables
-        space_size = 1
-        warnings = []
-        if variables:
-            print('variables:')
-            for var, vals in variables:
-                print('    {}={}'.format(var, repr(vals)))
-                for val in vals:
-                    if isinstance(val, str) and ',' in val:
-                        warnings.append('variable "{}" has string value {} with a comma'.format(var, repr(val)))
-                space_size *= len(vals)
-        print('total invocations: {}'.format(space_size))
-        if warnings:
-            print()
-            for warning in warnings:
-                print('WARNING: ' + warning)
-        print()
-        print(40 * '-')
-        print()
-    # prompt confirmation
+
+def valid_varval(varval):
+    if '=' not in varval:
+        raise ArgumentTypeError(
+            f'failed to parse --variable "{varval}"'
+        )
+    var, val = varval.split('=', maxsplit=1)
+    if not valid_variable(var):
+        raise ArgumentTypeError(
+            f'variable "{var}" does not conform to [a-z][a-z0-9_]*'
+        )
     try:
-        response = input('Run jobs? (y/N) ')
-    except KeyboardInterrupt:
-        print()
-        exit()
-    if response.lower().startswith('y'):
-        pbs_job.run_all(variables)
-
-
-def print_help():
-    message = 'usage: {} [--<var>=<vals> ...] cmd [arg ...]'.format(
-        sys.argv[0]
-    )
-    print(message)
-    exit()
-
-
-def parse_var(arg, force_list=True):
-    var, vals = arg.split('=', maxsplit=1)
-    var = var[2:].replace('-', '_')
-    if not re.match('^[a-z]([_a-z0-9-]*?[a-z0-9])?$', var):
-        raise ValueError('Invalid variable name: "{}"'.format(var))
-    try:
-        vals = literal_eval(vals)
+        val = literal_eval(val)
     except ValueError:
-        vals = vals
-    if force_list and isinstance(vals, tuple([int, float, str])):
-        vals = [vals]
-    return var, vals
+        raise ArgumentTypeError(
+            f'failed to parse values "{val}" for variable "{var}"'
+        )
+    return (var, val)
 
 
-def parse_args():
-    variables = []
-    command = None
-    kwargs = {}
-    last_arg_index = 0
-    for i, arg in enumerate(sys.argv[1:], start=1):
-        if arg in ('-h', '--help'):
-            print_help()
-        elif arg.startswith('--'):
-            if arg == '--':
-                last_arg_index = i
-                break
-            var, vals = parse_var(arg)
-            variables.append([var, vals])
-        elif arg.startswith('-'):
-            key, val = parse_var(arg, force_list=False)
-            kwargs[key] = val
+def create_arg_parser(command=None, variables=None, job_name=None):
+    if job_name is None:
+        job_name = f'clusterun-{datetime.now().strftime("%Y%m%d%H%M%S")}'
+    arg_parser = ArgumentParser()
+    arg_parser.set_defaults(
+        command=command,
+        variables=variables,
+    )
+    if command is None:
+        arg_parser.add_argument(
+            '--command', type=str,
+            help='The command to run',
+        )
+    if variables is None:
+        arg_parser.add_argument(
+            '--variable', type=valid_varval, dest='variables', action='append',
+            help='A variable, in the form str=<expr>.',
+        )
+    else:
+        for var, _ in variables:
+            if not valid_variable(var):
+                raise ValueError(f'variable "{var}" does not conform to [a-z][a-z0-9_]*')
+    arg_parser.add_argument(
+        '--num-cores', type=int,
+        help='Number of cores to run the job on.',
+    )
+    arg_parser.add_argument(
+        '--core', type=int,
+        help=' '.join([
+            'The core to run the current job.',
+            'Must be used with --num-cores.',
+            'Must NOT be used with --index.',
+        ]),
+    )
+    arg_parser.add_argument(
+        '--index', type=str,
+        help=' '.join([
+            'The indices of the iterable to use.',
+            'Must be used with --num-cores.',
+            'Must NOT be used with --index.',
+        ]),
+    )
+    arg_parser.add_argument(
+        '--skip', type=int, default=0,
+        help='Skip some initial parameters. Ignored if not running serially.',
+    )
+    arg_parser.add_argument(
+        '--job-name', default=job_name,
+        help='The name of the job, if passed to pbs. Ignored if not dispatched.',
+    )
+    arg_parser.add_argument(
+        '--queue', default='justinli',
+        help='The queue to submit jobs to.',
+    )
+    arg_parser.add_argument(
+        '--dry-run', action='store_true',
+        help='If set, print out the parameter space and exit.',
+    )
+    arg_parser.add_argument(
+        '--dispatch', type=(lambda s: s.lower() == 'true'), default=None,
+        help=' '.join([
+            'Force job to be dispatched if true, or to run serially if not.',
+            'By default, will dispatch if --num-cores is set',
+            'but neither --core nor --index is set.',
+        ]),
+    )
+    return arg_parser
+
+
+def parse_indices(indices_str):
+    if not re.fullmatch('[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*', indices_str):
+        raise ValueError(' '.join([
+            'index argument does not conform to',
+            '[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*',
+        ]))
+    indices = set()
+    for part in indices_str.split(','):
+        if '-' in part:
+            start, stop = part.split('-')
+            indices |= set(range(int(start), int(stop)))
         else:
-            break
-        last_arg_index = i
-    command = ' '.join(sys.argv[last_arg_index + 1:])
-    return variables, command, kwargs
+            indices.add(int(part))
+    return sorted(indices)
 
 
-def main():
-    variables, command, kwargs = parse_args()
-    # print script
-    job_name = 'from_cmd_' + datetime.now().strftime('%Y%m%d%H%M%S')
-    commands = ['cd "$PBS_O_WORKDIR"', command]
-    run_cli(job_name, variables, commands, **kwargs)
+def check_args(arg_parser, args):
+    if args.command is None:
+        arg_parser.error('--command must be set')
+    if not args.variables:
+        arg_parser.error('at least one --variable must be set')
+    variables = set()
+    for var, _ in args.variables:
+        if var in variables:
+            arg_parser.error('variable {variable} is defined multiple times')
+        variables.add(var)
+    if args.core is not None:
+        if args.num_cores is None:
+            arg_parser.error('--num-cores must be set if --core is set')
+        if args.index is not None:
+            arg_parser.error('only one of --core and --index can be set')
+    if args.dispatch is False and args.num_cores is not None:
+        arg_parser.error('--num-cores must not be set if --dispatch=False')
+    if args.num_cores is not None and args.core is not None and args.core >= args.num_cores:
+        arg_parser.error('--core must be less than --num-cores')
 
 
-if __name__ == '__main__':
-    main()
+def parse_args(command=None, variables=None, job_name=None):
+    arg_parser = create_arg_parser(command, variables, job_name)
+    args = arg_parser.parse_args()
+    check_args(arg_parser, args)
+    if args.dispatch is None:
+        args.dispatch = (
+            args.num_cores is not None
+            and args.core is None
+            and args.index is None
+        )
+    args.size = 1
+    for var, vals in args.variables:
+        args.size *= len(vals)
+    if args.core is not None:
+        args.indices = [get_parameters(range(args.size), args.num_cores, args.core, args.skip)]
+    else:
+        if args.index is None:
+            args.index = list(range(args.size))
+        else:
+            args.index = parse_indices(args.index)
+            if args.index[-1] > args.size:
+                arg_parser.error('maximum index is greater than size of the variable space')
+        if args.num_cores is None:
+            args.indices = [args.index][args.skip:]
+        else:
+            args.indices = [
+                get_parameters(args.index, args.num_cores, core)
+                for core in range(args.num_cores)
+            ]
+    if len(args.indices) != 1 and args.skip != 0:
+        arg_parser.error('--skip must not be set if running in parallel')
+    return args
+
+
+def clusterun(command=None, variables=None, job_name=None):
+    args = parse_args(command=None, variables=None, job_name=None)
+    if args.dry_run:
+        dry_run(args)
+    elif args.dispatch:
+        dispatch(args)
+    else:
+        run_single(args)
