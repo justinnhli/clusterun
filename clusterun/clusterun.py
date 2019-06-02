@@ -102,20 +102,14 @@ def valid_variable(var):
 
 def valid_varval(varval):
     if '=' not in varval:
-        raise ArgumentTypeError(
-            f'failed to parse --variable "{varval}"'
-        )
+        raise ArgumentTypeError(f'failed to parse --variable "{varval}"')
     var, val = varval.split('=', maxsplit=1)
     if not valid_variable(var):
-        raise ArgumentTypeError(
-            f'variable "{var}" does not conform to [a-z][a-z0-9_]*'
-        )
+        raise ArgumentTypeError(f'variable "{var}" does not conform to [a-z][a-z0-9_]*')
     try:
         val = literal_eval(val)
     except ValueError:
-        raise ArgumentTypeError(
-            f'failed to parse values "{val}" for variable "{var}"'
-        )
+        raise ArgumentTypeError(f'failed to parse values "{val}" for variable "{var}"')
     return (var, val)
 
 

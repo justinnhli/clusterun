@@ -70,7 +70,9 @@ def sequencerun(callback, space, job_name=None, directory=None, executable=None)
         raise ValueError(f'space {repr(space)} is neither a string nor callable')
     callback_name = callback.__name__
     filepath = Path(__file__).resolve().parent.joinpath('sequencerun.py')
-    variables = [('sequencerun_index', list(range(len(space)))),]
+    variables = [
+        ('sequencerun_index', list(range(len(space)))),
+    ]
     command = ' && '.join([
         f'cd {directory}',
         f'{executable} {filepath} {code_path} {callback_name} {space_name} --index "$sequencerun_index"',
