@@ -1,2 +1,1 @@
-from .clusterun import clusterun
-from .sequencerun import sequencerun
+from .clusterun import clusterun, sequencerun

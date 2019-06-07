@@ -1,11 +1,6 @@
-import sys
 from argparse import ArgumentParser
 from importlib.util import spec_from_file_location, module_from_spec
-from inspect import currentframe
 from pathlib import Path
-
-from .clusterun import clusterun
-
 
 def load_name(path, name):
     """Import an identifier from another module.
@@ -42,46 +37,7 @@ def run(filename, callback_name, space_name, index):
             callback(params)
 
 
-def sequencerun(callback, space, job_name=None, directory=None, executable=None):
-    """Command line interface to the module.
-
-    Arguments:
-        callback (Callable): The function to run.
-        space (Union[str, Callable]): The argument space.
-        job_name (str): The name of the job, if passed to pbs.
-        directory (str): The working directory to run from.
-        executable (str): The Python executable.
-
-    Raises:
-        ValueError: If space is neither a string nor a callable
-    """
-    code_path = Path(currentframe().f_back.f_code.co_filename).resolve()
-    if not callable(callback):
-        raise ValueError(f'{repr(callback)} is not callable')
-    if directory is None:
-        directory = code_path.parent
-    if executable is None:
-        executable = sys.executable
-    if isinstance(space, str):
-        space_name = space
-    elif hasattr(space, '__call__'):
-        space_name = space.__name__
-        space = space()
-    else:
-        raise ValueError(f'space {repr(space)} is neither a string nor callable')
-    callback_name = callback.__name__
-    filepath = Path(__file__).resolve().parent.joinpath('sequencerun.py')
-    variables = [
-        ('sequencerun_index', list(range(len(space)))),
-    ]
-    command = ' && '.join([
-        f'cd {directory}',
-        f'{executable} {filepath} {code_path} {callback_name} {space_name} --index "$sequencerun_index"',
-    ])
-    clusterun(command, variables, job_name=job_name)
-
-
-def main():
+def dispatched():
     arg_parser = ArgumentParser()
     arg_parser.add_argument('code_path')
     arg_parser.add_argument('callback_name')
@@ -89,3 +45,6 @@ def main():
     arg_parser.add_argument('--index', type=int)
     args = arg_parser.parse_args()
     run(args.code_path, args.callback_name, args.space_name, args.index)
+
+if __name__ == '__main__':
+    dispatched()
