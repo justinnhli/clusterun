@@ -5,7 +5,6 @@ from shlex import quote
 from ast import literal_eval
 from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
-from inspect import currentframe
 from itertools import islice, product
 from pathlib import Path
 from textwrap import dedent
@@ -230,7 +229,7 @@ def parse_args(command=None, variables=None, job_name=None):
             and args.index is None
         )
     args.size = 1
-    for var, vals in args.variables:
+    for _, vals in args.variables:
         args.size *= len(vals)
     if args.core is not None:
         args.indices = [get_parameters(range(args.size), args.num_cores, args.core, args.skip)]
@@ -254,7 +253,7 @@ def parse_args(command=None, variables=None, job_name=None):
 
 
 def clusterun(command=None, variables=None, job_name=None):
-    args = parse_args(command=None, variables=None, job_name=None)
+    args = parse_args(command=command, variables=variables, job_name=job_name)
     if args.dry_run:
         dry_run(args)
     elif args.dispatch:
