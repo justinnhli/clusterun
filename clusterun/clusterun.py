@@ -29,7 +29,7 @@ def get_parameters(space, num_cores=1, core=0, skip=0):
 def create_command(args, indices):
     command = []
     command.append(sys.executable)
-    command.append(str(Path(__file__).resolve().joinpath('dispatched.py'))
+    command.append(str(Path(__file__).resolve()))
     command.append(f'--command {quote(args.command)}')
     for var, vals in args.variables:
         variable_argument = f'{var}={repr(vals)}'
@@ -291,7 +291,7 @@ def sequencerun(callback, space, job_name=None, directory=None, executable=None)
     else:
         raise ValueError(f'space {repr(space)} is neither a string nor callable')
     callback_name = callback.__name__
-    filepath = Path(__file__).resolve().parent.joinpath('sequencerun.py')
+    filepath = Path(__file__).resolve().parent.joinpath('dispatched.py')
     variables = [
         ('sequencerun_index', list(range(len(space)))),
     ]
@@ -300,3 +300,7 @@ def sequencerun(callback, space, job_name=None, directory=None, executable=None)
         f'{executable} {filepath} {code_path} {callback_name} {space_name} --index "$sequencerun_index"',
     ])
     clusterun(command, variables, job_name=job_name)
+
+
+if __name__ == '__main__':
+    clusterun()
