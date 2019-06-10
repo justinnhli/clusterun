@@ -1,3 +1,5 @@
+import os
+import sys
 from argparse import ArgumentParser
 from importlib.util import spec_from_file_location, module_from_spec
 from pathlib import Path
@@ -28,6 +30,8 @@ def run(filename, callback_name, space_name, index):
         index (int): The index of the space to run.
     """
     filename = Path(filename).resolve()
+    sys.path.insert(0, str(filename.parent))
+    os.chdir(filename.parent)
     space = load_name(filename, space_name)
     callback = load_name(filename, callback_name)
     if hasattr(space, '__call__'):
