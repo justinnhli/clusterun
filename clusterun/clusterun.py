@@ -10,6 +10,8 @@ from pathlib import Path
 from shlex import quote
 from textwrap import dedent
 
+from .utils import load_name
+
 
 def get_parameters(space, num_cores=1, core=0, skip=0):
     """Split a parameter space into a size appropriate for one core.
@@ -285,6 +287,7 @@ def sequencerun(callback, space, job_name=None, directory=None, executable=None)
         executable = sys.executable
     if isinstance(space, str):
         space_name = space
+        space = load_name(code_path, space_name)
     elif hasattr(space, '__call__'):
         space_name = space.__name__
         space = space()
