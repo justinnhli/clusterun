@@ -4,13 +4,28 @@ import sys
 from argparse import ArgumentParser, ArgumentTypeError
 from ast import literal_eval
 from datetime import datetime
+from importlib.util import spec_from_file_location, module_from_spec
 from inspect import currentframe
 from itertools import islice, product
 from pathlib import Path
 from shlex import quote
 from textwrap import dedent
 
-from .utils import load_name
+
+def load_name(path, name):
+    """Import an identifier from another module.
+
+    Arguments:
+        path (Path): The path of the file to import from.
+        name (str): The name of the variable to import.
+
+    Returns:
+        Any: The value of the identifier in that module
+    """
+    specification = spec_from_file_location(path.name, path)
+    module = module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return getattr(module, name)
 
 
 def get_parameters(space, num_cores=1, core=0, skip=0):
