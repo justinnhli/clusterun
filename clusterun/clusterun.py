@@ -192,8 +192,7 @@ def create_arg_parser(command=None, variables=None, job_name=None):
         '--dispatch', type=(lambda s: s.lower() == 'true'), default=None,
         help=' '.join([
             'Force job to be dispatched if true, or to run serially if not.',
-            'By default, will dispatch if --num-cores is set',
-            'but neither --core nor --index is set.',
+            'By default, will dispatch if --num-cores is set and --core is not set.',
         ]),
     )
     return arg_parser
@@ -241,11 +240,7 @@ def parse_args(command=None, variables=None, job_name=None):
     args = arg_parser.parse_args()
     check_args(arg_parser, args)
     if args.dispatch is None:
-        args.dispatch = (
-            args.num_cores is not None
-            and args.core is None
-            and args.index is None
-        )
+        args.dispatch = (args.num_cores is not None and args.core is None)
     args.size = 1
     for _, vals in args.variables:
         args.size *= len(vals)
@@ -258,7 +253,7 @@ def parse_args(command=None, variables=None, job_name=None):
             args.index = parse_indices(args.index)
             if args.index[-1] > args.size:
                 arg_parser.error('maximum index is greater than size of the variable space')
-        if args.num_cores is None:
+        if args.num_cores is None or not args.dispatch:
             args.indices = [args.index][args.skip:]
         else:
             args.indices = [
