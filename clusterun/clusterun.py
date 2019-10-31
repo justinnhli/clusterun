@@ -100,7 +100,7 @@ def dispatch(args):
 
 
 def run_single(args):
-    index = set(args.index)
+    index = set(args.indices)
     variables = [var for var, _ in args.variables]
     for i, values in enumerate(product(*(vals for _, vals in args.variables))):
         if i not in index:
