@@ -169,7 +169,7 @@ def create_arg_parser(command=None, variables=None, job_name=None):
         help=' '.join([
             'The indices of the iterable to use.',
             'Must be used with --num-cores.',
-            'Must NOT be used with --index.',
+            'Must NOT be used with --core.',
         ]),
     )
     arg_parser.add_argument(
