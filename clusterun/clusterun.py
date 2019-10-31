@@ -70,11 +70,17 @@ def dry_run(args):
             f'out of {args.size} permutations,',
             f'to {len(args.indices)} parallel job(s):',
         ]))
-        for job_num, indices in enumerate(args.indices, start=1):
+        for job_num, indices in enumerate(args.indices):
             print(f'    job {job_num} ({len(indices)}): ' + ', '.join(str(i) for i in indices))
+    elif args.core is not None:
+        print(f'locally running {len(args.indices[0])} out of {args.size} permutations')
+        print(f'    core {args.core} ({len(args.indices[0])}): ' + ', '.join(str(i) for i in args.indices[0]))
+    elif args.index is not None:
+        print(f'locally running {len(args.indices[0])} out of {args.size} permutations:')
+        print(f'    ' + ', '.join(str(i) for i in args.indices[0]))
     else:
         print(' '.join([
-            f'running {sum(len(indices) for indices in args.indices)}',
+            f'locally running {sum(len(indices) for indices in args.indices)}',
             f'out of {args.size} permutations',
         ]))
 
